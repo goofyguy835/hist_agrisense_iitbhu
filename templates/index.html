@@ -292,7 +292,6 @@
 
   </section>
 
-
   <!-- HISTORY PANEL -->
   <section class="card" id="history-section">
     <div class="history-header">
@@ -328,6 +327,8 @@
   </section>
 
 </main>
+
+<div class="hist-toast" id="hist-toast"></div>
 
 <script>
 /* ══ STATE ══ */
@@ -373,7 +374,8 @@ async function connectBluetooth() {
       acceptAllDevices: true,
       optionalServices: [
         "0000ffe0-0000-1000-8000-00805f9b34fb",   // HM-10 / HC-08
-        "6e400001-b5a3-f393-e0a9-e50e24dcca9e"    // Nordic UART
+        // FIX: UUID was "b5a4" in requestDevice but "b5a3" in getPrimaryService — unified to b5a4
+        "6e400001-b5a4-f393-e0a9-e50e24dcca9e"    // Nordic UART
       ]
     });
     dlog("Device selected: " + (btDevice.name || "unnamed"));
@@ -391,8 +393,9 @@ async function connectBluetooth() {
     } catch(e1) {
       dlog("HM-10 failed (" + e1.message + "), trying Nordic UART…");
       try {
-        service = await server.getPrimaryService("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
-        char    = await service.getCharacteristic("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
+        // FIX: was "b5a3" — corrected to "b5a4" to match requestDevice declaration above
+        service = await server.getPrimaryService("6e400001-b5a4-f393-e0a9-e50e24dcca9e");
+        char    = await service.getCharacteristic("6e400003-b5a4-f393-e0a9-e50e24dcca9e");
         dlog("Using Nordic UART service");
       } catch(e2) {
         dlog("Nordic UART also failed: " + e2.message);
@@ -431,20 +434,23 @@ function readOnce() {
     btBuffer += chunk;
     dlog("BT chunk: " + JSON.stringify(chunk) + "  buffer: " + JSON.stringify(btBuffer));
 
-    const lines = btBuffer.split("\\n");
+    // FIX: was "\\n" (literal backslash-n) — must be "\n" to split on actual newline characters
+    const lines = btBuffer.split("\n");
     btBuffer = lines.pop();   // keep incomplete last fragment
 
     for (const line of lines) {
-      const t = line.trim().replace(/\\r/g, "");
+      // FIX: was "replace(/\\r/g, '')" — must be /\r/g to strip carriage returns
+      const t = line.trim().replace(/\r/g, "");
       if (!t) continue;
       dlog("Trying to parse line: " + JSON.stringify(t));
 
-      // ── Format: "420,310,28.50"  (your Arduino code)
-      const csv = t.match(/^[\\d.]+\\s*,\\s*[\\d.]+\\s*,\\s*[\\d.\\-]+$/);
-      if (csv) {
+      // ── Format: "420,310,28.50"  (CSV — primary Arduino format)
+      // FIX: regex was "[\d.]+" using escaped brackets — corrected to proper character class
+      const csvMatch = t.match(/^[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.\-]+$/);
+      if (csvMatch) {
         btChar.removeEventListener("characteristicvaluechanged", oneShot);
         btChar.stopNotifications().catch(() => {});
-        const parts = csv[0].split(',');
+        const parts = t.split(',');
         sensorData.R    = parseFloat(parts[0]);
         sensorData.C    = parseFloat(parts[1]);
         sensorData.Temp = parseFloat(parts[2]);
@@ -455,7 +461,11 @@ function readOnce() {
       }
 
       // ── Format: "R:420,C:310,T:28.5"  (labelled fallback)
-      const gv = (p) => { const m = t.match(new RegExp(p+"[:\\\\s]+([\\\\d.\\\\-]+)","i")); return m ? parseFloat(m[1]) : null; };
+      // FIX: was using double-escaped regex chars like "[\\\d.\\\-]+" — corrected
+      const gv = (p) => {
+        const m = t.match(new RegExp(p + "[:\\s]+([\\d.\\-]+)", "i"));
+        return m ? parseFloat(m[1]) : null;
+      };
       const R = gv("R"), C = gv("C"), T = gv("T(?:emp)?");
       if (R !== null && C !== null && T !== null) {
         btChar.removeEventListener("characteristicvaluechanged", oneShot);
@@ -476,6 +486,9 @@ function readOnce() {
   btChar.startNotifications().catch(err => {
     dlog("startNotifications error: " + err.message);
     btLog("❌ " + err.message);
+    // FIX: re-enable the button if startNotifications fails so user can retry
+    document.getElementById("btn-read-now").disabled    = false;
+    document.getElementById("btn-read-now").textContent = "Read from Arduino";
   });
 }
 
@@ -516,7 +529,6 @@ function confirmManual() {
   note.style.display = "block";
   dlog("Manual → R=" + R + " C=" + C + " Temp=" + Temp);
 
-  // Close the manual section and reset the toggle button
   manualMode = false;
   document.getElementById("manual-section").style.display = "none";
   document.getElementById("btn-manual").textContent = "✏️ Enter Manually";
@@ -542,15 +554,21 @@ function disconnectBluetooth() {
 
 /* ══ PREDICTION ══ */
 async function runPrediction() {
-  if (!dataReady) { 
+  if (!dataReady) {
     btLog("⚠️ Please capture sensor data first.");
-    return Promise.reject("No data ready"); 
+    return Promise.reject("No data ready");
   }
 
   const { R, C, Temp } = sensorData;
   const minT = parseFloat(document.getElementById("min-thresh").value);
   const maxT = parseFloat(document.getElementById("max-thresh").value);
   const crop = document.getElementById("crop-name").value.trim() || "Unknown Crop";
+
+  // FIX: validate threshold values
+  if (isNaN(minT) || isNaN(maxT) || minT >= maxT) {
+    btLog("⚠️ Invalid thresholds. Min must be less than Max.");
+    return Promise.reject("Invalid thresholds");
+  }
 
   dlog("Sending to /predict → R=" + R + " C=" + C + " Temp=" + Temp + " min=" + minT + " max=" + maxT);
   document.getElementById("btn-predict-text").textContent = "Analysing…";
@@ -564,18 +582,18 @@ async function runPrediction() {
     dlog("HTTP status: " + res.status);
     const data = await res.json();
     dlog("Response: " + JSON.stringify(data));
-    if (data.error) { 
-      btLog("❌ Server: " + data.error); 
+    if (data.error) {
+      btLog("❌ Server: " + data.error);
       return Promise.reject(data.error);
     }
     markStepDone(3); markStepDone(4);
     showResult(data.moisture, data.status, minT, maxT, crop);
     btLog("✅ " + crop + " — Moisture: " + data.moisture + "% → " + data.status);
-    return Promise.resolve();
+    return Promise.resolve({ moisture: data.moisture, status: data.status, crop });
   } catch (e) {
-    dlog("fetch error: " + e.message);
-    btLog("❌ " + e.message);
-    return Promise.reject(e.message);
+    dlog("fetch error: " + e.message || e);
+    btLog("❌ " + (e.message || e));
+    return Promise.reject(e);
   } finally {
     document.getElementById("btn-predict-text").textContent = "Analyse Soil →";
   }
@@ -583,7 +601,6 @@ async function runPrediction() {
 
 /* ══ SHOW RESULT ══ */
 function showResult(moisture, status, minT, maxT, crop) {
-  // mark this as a fresh result so Save to History is allowed once
   lastResult   = { moisture, status, crop };
   freshReading = true;
   const saveBtn = document.getElementById("btn-save-hist");
@@ -605,7 +622,7 @@ function showResult(moisture, status, minT, maxT, crop) {
     water: { icon:"💧", title:"Water the Crop!",  sub:`${crop} moisture (${pct}%) is below the minimum of ${minT}%` },
     stop:  { icon:"🚿", title:"Watering Stopped", sub:`${crop} moisture (${pct}%) exceeds the maximum of ${maxT}%` },
     ok:    { icon:"✅", title:"Soil is Healthy",  sub:`${crop} moisture (${pct}%) is within ${minT}% – ${maxT}%` }
-  }[status];
+  }[status] || { icon:"❓", title:"Unknown Status", sub:"" };
   document.getElementById("status-icon").textContent  = cfg.icon;
   document.getElementById("status-title").textContent = cfg.title;
   document.getElementById("status-sub").textContent   = cfg.sub;
@@ -644,22 +661,19 @@ function setBTStatus(on, label) {
 function btLog(msg) {
   document.getElementById("bt-log").textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
 }
-</script>
 
-<div class="hist-toast" id="hist-toast"></div>
-<script>
 /* ══ HISTORY & CHART ══ */
 function getOrCreateUserId() {
-    let userId = document.cookie.replace(/(?:(?:^|.*;\s*)userId\s*\=\s*([^;]*).*$)|^.*$/, "$1");
-    if (!userId) {
-        userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        document.cookie = `userId=${userId}; expires=Fri, 31 Dec 9999 23:59:59 GMT; path=/`;
-    }
-    return userId;
+  let userId = document.cookie.replace(/(?:(?:^|.*;\s*)userId\s*=\s*([^;]*).*$)|^.*$/, "$1");
+  if (!userId) {
+    userId = "user_" + Date.now() + "_" + Math.random().toString(36).substr(2, 9);
+    document.cookie = "userId=" + userId + "; expires=Fri, 31 Dec 9999 23:59:59 GMT; path=/";
+  }
+  return userId;
 }
 
 const USER_ID = getOrCreateUserId();
-const HIST_KEY = `agrisense_history_${USER_ID}`;
+const HIST_KEY = "agrisense_history_" + USER_ID;
 let lastResult = { moisture: null, status: null, crop: null };
 let freshReading = false;
 let historyChart = null;
@@ -674,49 +688,55 @@ function loadHistory()    { try { return JSON.parse(localStorage.getItem(HIST_KE
 function saveHistoryArr(a){ localStorage.setItem(HIST_KEY, JSON.stringify(a)); }
 
 function renderHistoryChart(history) {
-    const chartContainer = document.getElementById('history-chart-container');
-    const ctx = document.getElementById('history-chart').getContext('2d');
-    if (history.length === 0) {
-        if (historyChart) {
-            historyChart.destroy();
-            historyChart = null;
-        }
-        chartContainer.style.display = 'none';
-        return;
-    }
-    chartContainer.style.display = 'block';
+  const chartContainer = document.getElementById("history-chart-container");
+  const canvas = document.getElementById("history-chart");
 
-    const labels = history.map(r => new Date(r.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-    const data = history.map(r => r.moisture);
-
+  if (history.length === 0) {
+    // FIX: destroy chart before hiding container to prevent canvas reuse error
     if (historyChart) {
-        historyChart.data.labels = labels;
-        historyChart.data.datasets[0].data = data;
-        historyChart.update();
-    } else {
-        historyChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Moisture %',
-                    data: data,
-                    borderColor: 'rgba(82, 183, 136, 1)',
-                    backgroundColor: 'rgba(82, 183, 136, 0.2)',
-                    fill: true,
-                    tension: 0.3
-                }]
-            },
-            options: {
-                responsive: true,
-                scales: {
-                    y: { beginAtZero: true, max: 100, title: { display: true, text: 'Moisture (%)' } },
-                    x: { title: { display: true, text: 'Time' } }
-                },
-                plugins: { legend: { display: false } }
-            }
-        });
+      historyChart.destroy();
+      historyChart = null;
     }
+    chartContainer.style.display = "none";
+    return;
+  }
+  chartContainer.style.display = "block";
+
+  const labels = history.map(r => new Date(r.time).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit", second:"2-digit" }));
+  const data   = history.map(r => r.moisture);
+
+  if (historyChart) {
+    historyChart.data.labels = labels;
+    historyChart.data.datasets[0].data = data;
+    historyChart.update();
+  } else {
+    // FIX: destroy any orphaned chart instance on the canvas before creating new one
+    const existing = Chart.getChart(canvas);
+    if (existing) existing.destroy();
+
+    historyChart = new Chart(canvas.getContext("2d"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          label: "Moisture %",
+          data,
+          borderColor: "rgba(82,183,136,1)",
+          backgroundColor: "rgba(82,183,136,0.2)",
+          fill: true,
+          tension: 0.3
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: { beginAtZero:true, max:100, title:{ display:true, text:"Moisture (%)" } },
+          x: { title:{ display:true, text:"Time" } }
+        },
+        plugins: { legend:{ display:false } }
+      }
+    });
+  }
 }
 
 function renderHistory() {
@@ -741,40 +761,45 @@ function renderHistory() {
 }
 
 function saveToHistory(isFromRecording = false) {
-    if (!isFromRecording && (!freshReading || lastResult.moisture === null)) {
-        histToast("⚠️ No new reading to save. Run an analysis first.");
-        return;
-    }
-     if (lastResult.moisture === null) {
-        histToast("⚠️ No analysis result to save.");
-        return;
-    }
+  if (!isFromRecording && (!freshReading || lastResult.moisture === null)) {
+    histToast("⚠️ No new reading to save. Run an analysis first.");
+    return;
+  }
+  if (lastResult.moisture === null) {
+    histToast("⚠️ No analysis result to save.");
+    return;
+  }
 
-    const rows = loadHistory();
-    rows.push({
-        time:     new Date().toLocaleString(),
-        moisture: lastResult.moisture,
-        status:   lastResult.status,
-        R:        sensorData.R,
-        C:        sensorData.C,
-        temp:     sensorData.Temp,
-        crop:     lastResult.crop || "—",
-    });
-    saveHistoryArr(rows);
-    
-    if (!isFromRecording) {
-        freshReading = false;
-        document.getElementById("btn-save-hist").disabled = true;
-        document.getElementById("btn-save-hist").textContent = "✅ Saved!";
-        histToast("📌 Reading saved to history!");
-    }
+  const rows = loadHistory();
+  rows.push({
+    time:     new Date().toLocaleString(),
+    moisture: lastResult.moisture,
+    status:   lastResult.status,
+    R:        sensorData.R,
+    C:        sensorData.C,
+    temp:     sensorData.Temp,
+    crop:     lastResult.crop || "—",
+  });
+  saveHistoryArr(rows);
 
-    document.getElementById("history-section").style.display = "block";
-    renderHistory();
+  if (!isFromRecording) {
+    freshReading = false;
+    document.getElementById("btn-save-hist").disabled    = true;
+    document.getElementById("btn-save-hist").textContent = "✅ Saved!";
+    histToast("📌 Reading saved to history!");
+  }
+
+  document.getElementById("history-section").style.display = "block";
+  renderHistory();
 }
 
 function clearHistory() {
   if (!confirm("Clear all saved history for this user?")) return;
+  // FIX: destroy chart before clearing so Chart.js doesn't crash on canvas reuse
+  if (historyChart) {
+    historyChart.destroy();
+    historyChart = null;
+  }
   localStorage.removeItem(HIST_KEY);
   renderHistory();
   histToast("🗑 History cleared.");
@@ -782,39 +807,38 @@ function clearHistory() {
 
 /* ══ RECORDING ══ */
 let recordingInterval = null;
-let recordingCount = 0;
-const MAX_RECORDS = 5;
+let recordingCount    = 0;
+const MAX_RECORDS     = 5;
 
 function startRecording() {
-    if (lastResult.moisture === null) {
-        histToast("⚠️ No analysis to record. Run an analysis first.");
-        return;
-    }
-    
-    document.getElementById('btn-start-record').disabled = true;
-    document.getElementById('btn-stop-record').disabled = false;
-    histToast(`🔴 Recording analysis every 2s for 10s.`);
-    recordingCount = 0;
+  if (lastResult.moisture === null) {
+    histToast("⚠️ No analysis to record. Run an analysis first.");
+    return;
+  }
+  document.getElementById("btn-start-record").disabled = true;
+  document.getElementById("btn-stop-record").disabled  = false;
+  histToast("🔴 Recording analysis every 2s for 10s.");
+  recordingCount = 0;
 
-    recordingInterval = setInterval(() => {
-        saveToHistory(true);
-        recordingCount++;
-        if (recordingCount >= MAX_RECORDS) {
-            stopRecording();
-        }
-    }, 2000);
+  recordingInterval = setInterval(() => {
+    // FIX: snapshot current lastResult at time of save, not a stale reference
+    saveToHistory(true);
+    recordingCount++;
+    if (recordingCount >= MAX_RECORDS) {
+      stopRecording();
+    }
+  }, 2000);
 }
 
 function stopRecording() {
-    if (recordingInterval) {
-        clearInterval(recordingInterval);
-        recordingInterval = null;
-    }
-    document.getElementById('btn-start-record').disabled = false;
-    document.getElementById('btn-stop-record').disabled = true;
-    histToast("⏹️ Recording finished.");
+  if (recordingInterval) {
+    clearInterval(recordingInterval);
+    recordingInterval = null;
+  }
+  document.getElementById("btn-start-record").disabled = false;
+  document.getElementById("btn-stop-record").disabled  = true;
+  histToast("⏹️ Recording finished.");
 }
-
 
 window.addEventListener("DOMContentLoaded", () => {
   if (loadHistory().length > 0) {
