@@ -1,10 +1,12 @@
 from flask import Flask, render_template, request, jsonify
+from flask_cors import CORS
 import pickle
 import numpy as np
 import pandas as pd
 import os
 
 app = Flask(__name__)
+CORS(app)  # FIX: added CORS so browser fetch() doesn't get blocked by preflight
 
 epsilon = 1e-6
 
@@ -55,21 +57,18 @@ try:
     with open(MODEL_PATH, "rb") as f:
         payload = pickle.load(f)
 
-    # New format: {"model": <estimator>, "features": [...]}
     if isinstance(payload, dict) and "model" in payload:
         model          = payload["model"]
         model_features = payload.get("features", None)
         print(f"[BOOT] ✅ New-format pkl detected.")
         print(f"[BOOT]    Feature list: {model_features}")
-
-    # Old format: raw sklearn estimator saved directly
     else:
         model          = payload
-        model_features = None   # will use raw [R, C, T] input
+        model_features = None
         print(f"[BOOT] ✅ Old-format pkl detected (raw estimator).")
 
 except FileNotFoundError:
-    print("[BOOT] ❌ ERROR: rf_experimental.pkl not found! Place it next to app.py.")
+    print("[BOOT] ❌ ERROR: ExtraTrees__physics_full.pkl not found! Place it next to app.py.")
     model = None
     model_features = None
 except Exception as e:
@@ -87,16 +86,24 @@ def home():
     return render_template("index.html")
 
 
-@app.route("/predict", methods=["POST"])
+@app.route("/predict", methods=["POST", "OPTIONS"])  # FIX: explicit OPTIONS for CORS preflight
 def predict():
+    # FIX: handle OPTIONS preflight request
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+
     print("[POST /predict] Request received")
 
     if model is None:
-        return jsonify({"error": "Model not loaded. Check rf_experimental.pkl."}), 500
+        return jsonify({"error": "Model not loaded. Check ExtraTrees__physics_full.pkl."}), 500
 
     try:
         data = request.get_json(force=True)
         print(f"[POST /predict] Payload: {data}")
+
+        # FIX: validate payload is not None before accessing keys
+        if not data:
+            return jsonify({"error": "Empty or invalid JSON payload."}), 400
 
         R          = float(data["R"])
         C          = float(data["C"])
@@ -115,7 +122,6 @@ def predict():
             }])
             df_input  = add_features(df_input)
 
-            # Verify all expected features are present
             missing = [f for f in model_features if f not in df_input.columns]
             if missing:
                 msg = f"Feature engineering missing columns: {missing}"
@@ -143,6 +149,11 @@ def predict():
 
     except KeyError as e:
         msg = f"Missing field in request: {e}"
+        print(f"[POST /predict] ❌ {msg}")
+        return jsonify({"error": msg}), 400
+
+    except ValueError as e:
+        msg = f"Invalid numeric value: {e}"
         print(f"[POST /predict] ❌ {msg}")
         return jsonify({"error": msg}), 400
 
