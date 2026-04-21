@@ -376,7 +376,10 @@
   <section class="card" id="history-section">
     <div class="history-header">
       <h2 class="section-title">🕒 Reading History</h2>
-      <button class="btn btn-ghost" style="font-size:0.78rem;padding:7px 14px;" onclick="clearHistory()">🗑 Clear</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-ghost" style="font-size:0.78rem;padding:7px 14px;" onclick="downloadHistory()">⬇ Download</button>
+        <button class="btn btn-ghost" style="font-size:0.78rem;padding:7px 14px;" onclick="clearHistory()">🗑 Clear</button>
+      </div>
     </div>
     <p class="history-meta">
       This device · <span id="hist-count">0</span> entries
@@ -855,6 +858,59 @@ function clearHistory() {
   localStorage.removeItem(HIST_KEY);
   renderHistory();
   histToast("🗑 History cleared for this device.");
+}
+
+/* ══ DOWNLOAD HISTORY AS TXT ══ */
+function downloadHistory() {
+  const rows = loadHistory();
+  if (rows.length === 0) {
+    histToast("⚠️ No history to download yet.");
+    return;
+  }
+
+  const timestamp = new Date().toLocaleString();
+  const pad = (s, n) => String(s).padEnd(n);
+
+  // Build header
+  let txt = "AgriSense — IIT BHU  |  Soil Moisture History Log\n";
+  txt += "Generated : " + timestamp + "\n";
+  txt += "Device ID : " + DEVICE_ID + "\n";
+  txt += "Entries   : " + rows.length + "\n";
+  txt += "=".repeat(82) + "\n\n";
+
+  // Column headers
+  txt += pad("Time", 22) + pad("Moisture%", 12) + pad("Status", 10) +
+         pad("R", 8) + pad("C", 8) + pad("Temp(C)", 10) + "Crop\n";
+  txt += "-".repeat(82) + "\n";
+
+  // Rows (oldest first)
+  rows.forEach(r => {
+    const statusLabel = { water: "WATER", ok: "OK", stop: "STOP" }[r.status] || r.status;
+    txt += pad(r.time, 22) +
+           pad(r.moisture + "%", 12) +
+           pad(statusLabel, 10) +
+           pad(r.R, 8) +
+           pad(r.C, 8) +
+           pad(r.temp + "°C", 10) +
+           (r.crop || "—") + "\n";
+  });
+
+  txt += "\n" + "=".repeat(82) + "\n";
+  txt += "End of log — AgriSense · IIT BHU · Varanasi\n";
+
+  // Trigger download
+  const blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  const fileDate = new Date().toISOString().slice(0, 10);
+  a.href     = url;
+  a.download = "agrisense_history_" + fileDate + ".txt";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  histToast("⬇ History downloaded as .txt!");
 }
 
 /* ══ AUTO-RECORDING — reads fresh from Arduino each time ══ */
