@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AgriSense — Soil Moisture Monitor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    /* ── STEP FLOW ── */
+    .steps { display:flex; align-items:center; justify-content:center; gap:0; margin-bottom:4px; }
+    .step  { display:flex; flex-direction:column; align-items:center; gap:4px; flex:1; }
+    .step-num {
+      width:32px; height:32px; border-radius:50%;
+      background: rgba(45,106,79,0.15); color: #aaa;
+      font-size:0.85rem; font-weight:700;
+      display:flex; align-items:center; justify-content:center;
+      border: 2px solid rgba(45,106,79,0.2);
+      transition: background 0.3s, color 0.3s, border-color 0.3s;
+    }
+    .step-label { font-size:0.65rem; color:#aaa; letter-spacing:0.06em; text-transform:uppercase; text-align:center; transition:color 0.3s; }
+    .step-line  { flex:1; height:2px; background:rgba(45,106,79,0.15); margin-bottom:18px; transition:background 0.3s; }
+    .step.active   .step-num   { background:var(--green-mid);   color:#fff; border-color:var(--green-mid);   }
+    .step.active   .step-label { color:var(--green-mid);   }
+    .step.done     .step-num   { background:var(--green-light); color:#fff; border-color:var(--green-light); }
+    .step.done     .step-label { color:var(--green-light); }
+    .step-line.done { background:var(--green-light); }
+
+    #sensor-captured-note {
+      display:none; font-size:0.8rem; color:var(--green-mid);
+      background:rgba(82,183,136,0.1); border-radius:8px;
+      padding:8px 14px; margin-top:10px;
+      border-left:3px solid var(--green-light);
+    }
+
+    /* ── CROP BADGE ── */
+    .crop-badge {
+      display:inline-flex; align-items:center; gap:8px;
+      background: linear-gradient(135deg, var(--gold), #e6c04a);
+      color: var(--green-deep);
+      font-family: 'Playfair Display', serif;
+      font-size:1.1rem; font-weight:700;
+      padding: 8px 22px; border-radius: 99px;
+      margin-bottom: 18px;
+      box-shadow: 0 4px 16px rgba(201,168,76,0.35);
+      animation: pop 0.4s cubic-bezier(.22,.68,0,1.2) both;
+    }
+    .crop-badge .crop-icon { font-size:1.3rem; }
+
+    /* ── DEBUG LOG ── */
+    #debug-log {
+      font-size:0.72rem; font-family:monospace;
+      background:#0d1f15; color:#7fffc4;
+      border-radius:10px; padding:10px 14px;
+      max-height:140px; overflow-y:auto;
+      margin-top:10px; display:none;
+    }
+    #debug-log p { margin:2px 0; }
+    #debug-toggle { font-size:0.75rem; color:var(--green-mid); cursor:pointer; text-decoration:underline; margin-top:6px; display:inline-block; }
+
+    /* crop text input style */
+    .text-input {
+      width:100%; padding:11px 14px;
+      border:1.5px solid rgba(45,106,79,0.22); border-radius:10px;
+      background:rgba(255,255,255,0.75);
+      font-family:'DM Sans',sans-serif; font-size:0.97rem;
+      color:var(--green-deep); outline:none;
+      transition:border-color .2s, box-shadow .2s;
+    }
+    .text-input:focus {
+      border-color:var(--green-light);
+      box-shadow:0 0 0 3px rgba(82,183,136,0.2);
+    }
+
+    /* ── HISTORY PANEL ── */
+    #history-section { display:none; }
+    .history-header  { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:10px; }
+    .history-header h2 { margin-bottom:0; }
+    .history-meta { font-size:0.78rem; color:#888; margin-bottom:14px; }
+    .history-meta span { color:var(--green-mid); font-weight:600; }
+
+    .hist-table-wrap { overflow-x:auto; border-radius:12px; border:1px solid rgba(45,106,79,0.15); }
+    .hist-table { width:100%; border-collapse:collapse; font-size:0.82rem; }
+    .hist-table th { background:rgba(45,106,79,0.08); color:var(--green-mid); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.08em; padding:9px 12px; text-align:left; border-bottom:1px solid rgba(45,106,79,0.15); white-space:nowrap; }
+    .hist-table td { padding:9px 12px; border-bottom:1px solid rgba(45,106,79,0.07); color:var(--green-deep); vertical-align:middle; }
+    .hist-table tr:last-child td { border-bottom:none; }
+    .hist-table tr:hover td { background:rgba(82,183,136,0.05); }
+    .hist-empty { text-align:center; color:#bbb; font-style:italic; padding:28px; font-size:0.85rem; }
+    .spill { display:inline-block; padding:2px 10px; border-radius:99px; font-size:0.72rem; font-weight:600; }
+    .spill-water { background:rgba(30,96,145,0.13); color:var(--blue-water); }
+    .spill-ok    { background:rgba(82,183,136,0.18); color:var(--green-mid);  }
+    .spill-stop  { background:rgba(193,18,31,0.11);  color:var(--red-stop);   }
+
+    .btn-save-hist {
+      width:100%; margin-top:14px;
+      padding:13px; border-radius:13px; border:none; cursor:pointer;
+      background:linear-gradient(135deg,var(--green-deep),var(--green-mid));
+      color:#fff; font-family:'Playfair Display',serif; font-size:1rem; font-weight:700;
+      box-shadow:0 4px 18px rgba(45,106,79,0.35);
+      transition:transform .2s,box-shadow .2s,filter .2s;
+    }
+    .btn-save-hist:hover  { transform:translateY(-2px); box-shadow:0 8px 24px rgba(45,106,79,0.45); filter:brightness(1.08); }
+    .btn-save-hist:active { transform:translateY(0); }
+    .btn-save-hist:disabled { opacity:.45; cursor:not-allowed; transform:none; }
+
+    .hist-toast {
+      position:fixed; bottom:24px; right:24px; z-index:999;
+      background:var(--green-deep); color:#fff;
+      border-left:4px solid var(--green-light);
+      border-radius:12px; padding:11px 18px;
+      font-size:0.85rem; box-shadow:0 8px 28px rgba(0,0,0,0.28);
+      transform:translateY(80px); opacity:0;
+      transition:transform 0.35s cubic-bezier(.22,.68,0,1.2),opacity 0.35s;
+      pointer-events:none;
+    }
+    .hist-toast.show { transform:translateY(0); opacity:1; }
+  </style>
+</head>
+<body>
+
+<main class="dashboard">
+
+  <!-- HEADER -->
+  <header class="dash-header">
+    <div class="header-left">
+      <span class="leaf-anim">🌿</span>
+      <div>
+        <h1>AgriSense</h1>
+        <p class="subtitle">Smart Soil Moisture Monitor</p>
+      </div>
+    </div>
+    <div id="bt-badge" class="bt-badge disconnected">
+      <span class="bt-dot"></span>
+      <span id="bt-label">No Device</span>
+    </div>
+  </header>
+
+  <!-- STEP INDICATOR -->
+  <div class="card" style="padding:20px 24px 16px;">
+    <div class="steps">
+      <div class="step active" id="step1"><div class="step-num">1</div><div class="step-label">Connect</div></div>
+      <div class="step-line" id="line1"></div>
+      <div class="step" id="step2"><div class="step-num">2</div><div class="step-label">Read</div></div>
+      <div class="step-line" id="line2"></div>
+      <div class="step" id="step3"><div class="step-num">3</div><div class="step-label">Settings</div></div>
+      <div class="step-line" id="line3"></div>
+      <div class="step" id="step4"><div class="step-num">4</div><div class="step-label">Analyse</div></div>
+    </div>
+  </div>
+
+  <!-- STEP 1 — BLUETOOTH -->
+  <section class="card bt-section" id="section-connect">
+    <h2 class="section-title">📡 Step 1 — Connect Arduino</h2>
+    <p class="hint">
+      Connect your <strong>HC-05 / HC-06 / HM-10</strong> BLE module.<br>
+      Arduino sends: <code>resRaw,capRaw,tempC</code> e.g. <code>420,310,28.50</code>
+    </p>
+    <div class="bt-controls">
+      <button id="btn-connect"    class="btn btn-primary" onclick="connectBluetooth()">Connect Device</button>
+      <button id="btn-disconnect" class="btn btn-ghost"   onclick="disconnectBluetooth()" disabled>Disconnect</button>
+      <button id="btn-manual"     class="btn btn-ghost"   onclick="toggleManual()">✏️ Enter Manually</button>
+    </div>
+    <div id="bt-log" class="bt-log">Waiting for connection…</div>
+    <span id="debug-toggle" onclick="toggleDebug()">Show debug log</span>
+    <div id="debug-log"></div>
+  </section>
+
+  <!-- STEP 2 — ONE-SHOT READ -->
+  <section class="card" id="section-read" style="display:none">
+    <h2 class="section-title">📥 Step 2 — Read Sensor Data</h2>
+    <p class="hint">Click <strong>Read from Arduino</strong> once. Captures one reading and stops.</p>
+    <button id="btn-read-now" class="btn btn-primary" onclick="readOnce()">Read from Arduino</button>
+    <div id="sensor-captured-note">✅ Sensor data captured! Scroll down to set thresholds.</div>
+    <div class="sensor-row" id="sensor-display" style="display:none; margin-top:16px;">
+      <div class="sensor-chip">
+        <span class="chip-label">Resistive</span>
+        <span class="chip-value" id="disp-R">—</span>
+      </div>
+      <div class="sensor-chip">
+        <span class="chip-label">Capacitive</span>
+        <span class="chip-value" id="disp-C">—</span>
+      </div>
+      <div class="sensor-chip">
+        <span class="chip-label">Temp</span>
+        <span class="chip-value" id="disp-T">—</span>
+        <span class="chip-unit">°C</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- MANUAL INPUT -->
+  <section class="card" id="manual-section" style="display:none">
+    <h2 class="section-title">✏️ Manual Sensor Input</h2>
+    <div class="input-row">
+      <div class="form-group">
+        <label for="R">Resistive (RSS)</label>
+        <input type="number" id="R" placeholder="e.g. 420" step="any"/>
+      </div>
+      <div class="form-group">
+        <label for="C">Capacitive (CSS)</label>
+        <input type="number" id="C" placeholder="e.g. 310" step="any"/>
+      </div>
+      <div class="form-group">
+        <label for="Temp">Temperature (°C)</label>
+        <input type="number" id="Temp" placeholder="e.g. 28" step="any"/>
+      </div>
+    </div>
+    <button class="btn btn-primary" style="margin-top:14px;" onclick="confirmManual()">Confirm Values ✓</button>
+    <div id="manual-captured-note" style="display:none; font-size:0.8rem; color:var(--green-mid); margin-top:8px;"></div>
+  </section>
+
+  <!-- STEP 3 — CROP + THRESHOLDS -->
+  <section class="card" id="section-settings" style="display:none">
+    <h2 class="section-title">⚙️ Step 3 — Crop &amp; Thresholds</h2>
+
+    <div class="form-group" style="margin-bottom:20px;">
+      <label for="crop-name">Crop Name</label>
+      <input type="text" id="crop-name" class="text-input" placeholder="e.g. Wheat, Rice, Tomato…"/>
+      <span class="input-hint">Shown in the result card.</span>
+    </div>
+
+    <div class="input-row">
+      <div class="form-group">
+        <label for="min-thresh">Min Threshold (%)</label>
+        <input type="number" id="min-thresh" value="30" min="0" max="100" step="1"/>
+        <span class="input-hint">Below this → Water the crop 💧</span>
+      </div>
+      <div class="form-group">
+        <label for="max-thresh">Max Threshold (%)</label>
+        <input type="number" id="max-thresh" value="70" min="0" max="100" step="1"/>
+        <span class="input-hint">Above this → Stop watering 🚿</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 4 — ANALYSE -->
+  <div class="predict-row" id="section-analyse" style="display:none">
+    <button class="btn btn-predict" onclick="runPrediction()">
+      <span id="btn-predict-text">Analyse Soil →</span>
+    </button>
+  </div>
+
+  <!-- RESULT -->
+  <section class="card result-card" id="result-section" style="display:none">
+
+    <div style="text-align:center;">
+      <div class="crop-badge">
+        <span class="crop-icon">🌾</span>
+        <span id="crop-name-display">—</span>
+      </div>
+    </div>
+
+    <div class="moisture-ring-wrap">
+      <svg class="moisture-ring" viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg">
+        <circle class="ring-bg"   cx="80" cy="80" r="64"/>
+        <circle class="ring-fill" cx="80" cy="80" r="64" id="ring-fill"/>
+        <text class="ring-pct" x="80" y="76" text-anchor="middle" dominant-baseline="middle" id="ring-pct">0%</text>
+        <text class="ring-sub" x="80" y="96" text-anchor="middle" id="ring-sub">Moisture</text>
+      </svg>
+    </div>
+
+    <div id="status-banner" class="status-banner">
+      <span id="status-icon" class="status-icon">💧</span>
+      <div class="status-text-wrap">
+        <span id="status-title" class="status-title">Calculating…</span>
+        <span id="status-sub"   class="status-sub"></span>
+      </div>
+    </div>
+
+    <div class="threshold-bar-section">
+      <div class="threshold-bar">
+        <div class="threshold-fill" id="thresh-fill"></div>
+        <div class="threshold-marker" id="min-marker"><span class="marker-tip" id="min-tip">30%</span></div>
+        <div class="threshold-marker" id="max-marker"><span class="marker-tip" id="max-tip">70%</span></div>
+      </div>
+      <div class="bar-labels"><span>Dry (0%)</span><span>Wet (100%)</span></div>
+    </div>
+
+    <div style="text-align:center; margin-top:20px;">
+      <button class="btn btn-ghost" onclick="resetForNewRead()">🔄 Read Again</button>
+    </div>
+    <button class="btn-save-hist" id="btn-save-hist" onclick="saveToHistory()" disabled>📌 Save to History</button>
+
+  </section>
+
+
+  <!-- HISTORY PANEL -->
+  <section class="card" id="history-section">
+    <div class="history-header">
+      <h2 class="section-title">🕒 Reading History</h2>
+      <button class="btn btn-ghost" style="font-size:0.78rem;padding:7px 14px;" onclick="clearHistory()">🗑 Clear</button>
+    </div>
+    <p class="history-meta">Manually saved readings · <span id="hist-count">0</span> entries</p>
+    <div class="hist-table-wrap">
+      <table class="hist-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Moisture %</th>
+            <th>Status</th>
+            <th>R</th>
+            <th>C</th>
+            <th>Temp °C</th>
+            <th>Crop</th>
+          </tr>
+        </thead>
+        <tbody id="hist-tbody">
+          <tr><td colspan="7" class="hist-empty">No entries yet — analyse soil and press Save to History.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<script>
+/* ══ STATE ══ */
+let btDevice   = null;
+let btChar     = null;
+let btBuffer   = "";
+let sensorData = { R: null, C: null, Temp: null };
+let manualMode = false;
+let dataReady  = false;
+let debugOn    = false;
+
+/* ══ DEBUG LOG ══ */
+function dlog(msg) {
+  console.log(msg);
+  const box = document.getElementById("debug-log");
+  const p   = document.createElement("p");
+  p.textContent = new Date().toLocaleTimeString() + "  " + msg;
+  box.appendChild(p);
+  box.scrollTop = box.scrollHeight;
+}
+function toggleDebug() {
+  debugOn = !debugOn;
+  const box = document.getElementById("debug-log");
+  box.style.display = debugOn ? "block" : "none";
+  document.getElementById("debug-toggle").textContent = debugOn ? "Hide debug log" : "Show debug log";
+}
+
+/* ══ STEP HELPERS ══ */
+function markStepDone(n)   { document.getElementById("step"+n).className = "step done";   if(n<=3) document.getElementById("line"+n).className="step-line done"; }
+function markStepActive(n) { document.getElementById("step"+n).className = "step active"; }
+
+/* ══ BLUETOOTH CONNECT ══ */
+async function connectBluetooth() {
+  if (!navigator.bluetooth) {
+    btLog("❌ Web Bluetooth not supported. Use Chrome on desktop or Android.");
+    dlog("navigator.bluetooth is undefined");
+    return;
+  }
+  btLog("Requesting Bluetooth device…");
+  dlog("Calling requestDevice()");
+  try {
+    btDevice = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [
+        "0000ffe0-0000-1000-8000-00805f9b34fb",   // HM-10 / HC-08
+        "6e400001-b5a4-f393-e0a9-e50e24dcca9e"    // Nordic UART
+      ]
+    });
+    dlog("Device selected: " + (btDevice.name || "unnamed"));
+    btDevice.addEventListener("gattserverdisconnected", onDisconnected);
+    btLog("Found: " + (btDevice.name || "Unknown") + " — connecting GATT…");
+
+    const server = await btDevice.gatt.connect();
+    dlog("GATT connected");
+
+    let service, char;
+    try {
+      service = await server.getPrimaryService("0000ffe0-0000-1000-8000-00805f9b34fb");
+      char    = await service.getCharacteristic("0000ffe1-0000-1000-8000-00805f9b34fb");
+      dlog("Using HM-10 service (FFE0/FFE1)");
+    } catch(e1) {
+      dlog("HM-10 failed (" + e1.message + "), trying Nordic UART…");
+      try {
+        service = await server.getPrimaryService("6e400001-b5a4-f393-e0a9-e50e24dcca9e");
+        char    = await service.getCharacteristic("6e400003-b5a4-f393-e0a9-e50e24dcca9e");
+        dlog("Using Nordic UART service");
+      } catch(e2) {
+        dlog("Nordic UART also failed: " + e2.message);
+        btLog("❌ Could not find a compatible BLE serial service on this device.");
+        return;
+      }
+    }
+
+    btChar = char;
+    setBTStatus(true, btDevice.name || "Connected");
+    btLog("✅ Connected! Click 'Read from Arduino' to capture one reading.");
+    document.getElementById("btn-disconnect").disabled = false;
+    document.getElementById("btn-connect").disabled    = true;
+    markStepDone(1);
+    markStepActive(2);
+    document.getElementById("section-read").style.display = "block";
+
+  } catch (err) {
+    dlog("connectBluetooth error: " + err.message);
+    btLog("❌ " + err.message);
+  }
+}
+
+/* ══ ONE-SHOT READ ══ */
+function readOnce() {
+  if (!btChar) { btLog("❌ Not connected to any device."); return; }
+
+  btLog("⏳ Waiting for one reading from Arduino…");
+  dlog("readOnce() called, starting notifications");
+  document.getElementById("btn-read-now").disabled    = true;
+  document.getElementById("btn-read-now").textContent = "Waiting for data…";
+  btBuffer = "";
+
+  function oneShot(event) {
+    const chunk = new TextDecoder().decode(event.target.value);
+    btBuffer += chunk;
+    dlog("BT chunk: " + JSON.stringify(chunk) + "  buffer: " + JSON.stringify(btBuffer));
+
+    const lines = btBuffer.split("\n");
+    btBuffer = lines.pop();   // keep incomplete last fragment
+
+    for (const line of lines) {
+      const t = line.trim().replace(/\r/g, "");
+      if (!t) continue;
+      dlog("Trying to parse line: " + JSON.stringify(t));
+
+      // ── Format: "420,310,28.50"  (your Arduino code)
+      const csv = t.match(/^([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.\-]+)$/);
+      if (csv) {
+        btChar.removeEventListener("characteristicvaluechanged", oneShot);
+        btChar.stopNotifications().catch(() => {});
+        sensorData.R    = parseFloat(csv[1]);
+        sensorData.C    = parseFloat(csv[2]);
+        sensorData.Temp = parseFloat(csv[3]);
+        dlog("CSV parsed → R=" + sensorData.R + " C=" + sensorData.C + " T=" + sensorData.Temp);
+        btLog("📥 Captured: Resistive=" + sensorData.R + "  Capacitive=" + sensorData.C + "  Temp=" + sensorData.Temp + "°C");
+        onReadCaptured();
+        return;
+      }
+
+      // ── Format: "R:420,C:310,T:28.5"  (labelled fallback)
+      const gv = (p) => { const m = t.match(new RegExp(p+"[:\\s]+([\\d.\\-]+)","i")); return m ? parseFloat(m[1]) : null; };
+      const R = gv("R"), C = gv("C"), T = gv("T(?:emp)?");
+      if (R !== null && C !== null && T !== null) {
+        btChar.removeEventListener("characteristicvaluechanged", oneShot);
+        btChar.stopNotifications().catch(() => {});
+        sensorData.R = R; sensorData.C = C; sensorData.Temp = T;
+        dlog("Labelled parsed → R=" + R + " C=" + C + " T=" + T);
+        btLog("📥 Captured: R=" + R + "  C=" + C + "  Temp=" + T + "°C");
+        onReadCaptured();
+        return;
+      }
+
+      dlog("Line did not match any pattern, waiting for next line…");
+      btLog("⏳ Received raw data, waiting for complete line…");
+    }
+  }
+
+  btChar.addEventListener("characteristicvaluechanged", oneShot);
+  btChar.startNotifications().catch(err => {
+    dlog("startNotifications error: " + err.message);
+    btLog("❌ " + err.message);
+  });
+}
+
+function onReadCaptured() {
+  dataReady = true;
+  document.getElementById("sensor-display").style.display   = "flex";
+  document.getElementById("sensor-captured-note").style.display = "block";
+  document.getElementById("btn-read-now").textContent = "✅ Reading Captured";
+  document.getElementById("disp-R").textContent = sensorData.R;
+  document.getElementById("disp-C").textContent = sensorData.C;
+  document.getElementById("disp-T").textContent = sensorData.Temp;
+  markStepDone(2); markStepActive(3);
+  document.getElementById("section-settings").style.display = "block";
+  document.getElementById("section-analyse").style.display  = "block";
+  markStepActive(4);
+  document.getElementById("section-settings").scrollIntoView({ behavior:"smooth", block:"nearest" });
+}
+
+/* ══ MANUAL MODE ══ */
+function toggleManual() {
+  manualMode = !manualMode;
+  document.getElementById("manual-section").style.display = manualMode ? "block" : "none";
+  document.getElementById("btn-manual").textContent = manualMode ? "✕ Close Manual" : "✏️ Enter Manually";
+  if (manualMode) { markStepDone(1); markStepActive(2); }
+}
+
+function confirmManual() {
+  const R    = parseFloat(document.getElementById("R").value);
+  const C    = parseFloat(document.getElementById("C").value);
+  const Temp = parseFloat(document.getElementById("Temp").value);
+  const note = document.getElementById("manual-captured-note");
+  if (isNaN(R) || isNaN(C) || isNaN(Temp)) {
+    note.textContent = "⚠️ Please fill all three values.";
+    note.style.display = "block"; return;
+  }
+  sensorData = { R, C, Temp }; dataReady = true;
+  note.textContent   = "✅ Values confirmed!";
+  note.style.display = "block";
+  dlog("Manual → R=" + R + " C=" + C + " Temp=" + Temp);
+
+  // Close the manual section and reset the toggle button
+  manualMode = false;
+  document.getElementById("manual-section").style.display = "none";
+  document.getElementById("btn-manual").textContent = "✏️ Enter Manually";
+
+  markStepDone(2); markStepActive(3);
+  document.getElementById("section-settings").style.display = "block";
+  document.getElementById("section-analyse").style.display  = "block";
+  markStepActive(4);
+  document.getElementById("section-settings").scrollIntoView({ behavior:"smooth", block:"nearest" });
+}
+
+/* ══ DISCONNECT ══ */
+function onDisconnected() {
+  setBTStatus(false, "No Device");
+  btLog("⚠️ Device disconnected.");
+  dlog("gattserverdisconnected event fired");
+  document.getElementById("btn-disconnect").disabled = true;
+  document.getElementById("btn-connect").disabled    = false;
+}
+function disconnectBluetooth() {
+  if (btDevice && btDevice.gatt.connected) btDevice.gatt.disconnect();
+}
+
+/* ══ PREDICTION ══ */
+async function runPrediction() {
+  if (!dataReady) { btLog("⚠️ Please capture sensor data first."); return; }
+
+  const { R, C, Temp } = sensorData;
+  const minT = parseFloat(document.getElementById("min-thresh").value);
+  const maxT = parseFloat(document.getElementById("max-thresh").value);
+  const crop = document.getElementById("crop-name").value.trim() || "Unknown Crop";
+
+  dlog("Sending to /predict → R=" + R + " C=" + C + " Temp=" + Temp + " min=" + minT + " max=" + maxT);
+  document.getElementById("btn-predict-text").textContent = "Analysing…";
+
+  try {
+    const res  = await fetch("/predict", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ R, C, Temp, min_threshold: minT, max_threshold: maxT })
+    });
+    dlog("HTTP status: " + res.status);
+    const data = await res.json();
+    dlog("Response: " + JSON.stringify(data));
+    if (data.error) { btLog("❌ Server: " + data.error); return; }
+    markStepDone(3); markStepDone(4);
+    showResult(data.moisture, data.status, minT, maxT, crop);
+    btLog("✅ " + crop + " — Moisture: " + data.moisture + "% → " + data.status);
+  } catch (e) {
+    dlog("fetch error: " + e.message);
+    btLog("❌ " + e.message);
+  } finally {
+    document.getElementById("btn-predict-text").textContent = "Analyse Soil →";
+  }
+}
+
+/* ══ SHOW RESULT ══ */
+function showResult(moisture, status, minT, maxT, crop) {
+  // mark this as a fresh result so Save to History is allowed once
+  lastResult   = { moisture, status, crop };
+  freshReading = true;
+  const saveBtn = document.getElementById("btn-save-hist");
+  if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "📌 Save to History"; }
+  document.getElementById("result-section").style.display = "block";
+  document.getElementById("result-section").scrollIntoView({ behavior:"smooth", block:"nearest" });
+  document.getElementById("crop-name-display").textContent = crop;
+
+  const circ = 2 * Math.PI * 64;
+  const pct  = Math.min(Math.max(moisture, 0), 100);
+  const ring = document.getElementById("ring-fill");
+  ring.style.strokeDasharray  = circ;
+  ring.style.strokeDashoffset = circ * (1 - pct / 100);
+  ring.setAttribute("class", "ring-fill ring-" + status);
+  document.getElementById("ring-pct").textContent = pct + "%";
+
+  document.getElementById("status-banner").setAttribute("class", "status-banner status-" + status);
+  const cfg = {
+    water: { icon:"💧", title:"Water the Crop!",  sub:`${crop} moisture (${pct}%) is below the minimum of ${minT}%` },
+    stop:  { icon:"🚿", title:"Watering Stopped", sub:`${crop} moisture (${pct}%) exceeds the maximum of ${maxT}%` },
+    ok:    { icon:"✅", title:"Soil is Healthy",  sub:`${crop} moisture (${pct}%) is within ${minT}% – ${maxT}%` }
+  }[status];
+  document.getElementById("status-icon").textContent  = cfg.icon;
+  document.getElementById("status-title").textContent = cfg.title;
+  document.getElementById("status-sub").textContent   = cfg.sub;
+
+  document.getElementById("thresh-fill").style.width = pct + "%";
+  document.getElementById("thresh-fill").setAttribute("class", "threshold-fill fill-" + status);
+  document.getElementById("min-marker").style.left = minT + "%";
+  document.getElementById("max-marker").style.left = maxT + "%";
+  document.getElementById("min-tip").textContent   = "Min " + minT + "%";
+  document.getElementById("max-tip").textContent   = "Max " + maxT + "%";
+}
+
+/* ══ RESET ══ */
+function resetForNewRead() {
+  sensorData = { R:null, C:null, Temp:null }; dataReady = false;
+  [1,2,3,4].forEach(n => document.getElementById("step"+n).className = "step");
+  [1,2,3].forEach(n  => document.getElementById("line"+n).className  = "step-line");
+  markStepActive(1);
+  ["section-read","section-settings","section-analyse","result-section","sensor-display","sensor-captured-note"]
+    .forEach(id => document.getElementById(id).style.display = "none");
+  const rb = document.getElementById("btn-read-now");
+  rb.disabled = false; rb.textContent = "Read from Arduino";
+  btLog("🔄 Ready. Click 'Read from Arduino'.");
+  if (btDevice && btDevice.gatt.connected) {
+    markStepDone(1); markStepActive(2);
+    document.getElementById("section-read").style.display = "block";
+  }
+  document.querySelector(".dashboard").scrollIntoView({ behavior:"smooth" });
+}
+
+/* ══ HELPERS ══ */
+function setBTStatus(on, label) {
+  document.getElementById("bt-badge").className    = "bt-badge " + (on ? "connected" : "disconnected");
+  document.getElementById("bt-label").textContent  = label;
+}
+function btLog(msg) {
+  document.getElementById("bt-log").textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
+}
+</script>
+
+<div class="hist-toast" id="hist-toast"></div>
+<script>
+/* ══ HISTORY ══ */
+const HIST_KEY  = "agrisense_history";
+let   lastResult = { moisture:null, status:null, crop:null };
+// freshReading = true only after a brand-new Arduino/manual read + prediction
+// reset to false after saving, so duplicate saves are blocked
+let   freshReading = false;
+
+function histToast(msg) {
+  const t = document.getElementById("hist-toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 3000);
+}
+function loadHistory()    { try { return JSON.parse(localStorage.getItem(HIST_KEY)) || []; } catch(e) { return []; } }
+function saveHistoryArr(a){ localStorage.setItem(HIST_KEY, JSON.stringify(a)); }
+
+function renderHistory() {
+  const rows  = loadHistory();
+  document.getElementById("hist-count").textContent = rows.length;
+  const tbody = document.getElementById("hist-tbody");
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="hist-empty">No entries yet — analyse soil and press Save to History.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = [...rows].reverse().map(r => {
+    const cls  = { water:"spill-water", ok:"spill-ok", stop:"spill-stop" }[r.status] || "spill-ok";
+    const icon = { water:"💧", ok:"✅", stop:"🚿" }[r.status] || "";
+    return `<tr>
+      <td style="white-space:nowrap">${r.time}</td>
+      <td><strong>${r.moisture}%</strong></td>
+      <td><span class="spill ${cls}">${icon} ${r.status}</span></td>
+      <td>${r.R}</td><td>${r.C}</td><td>${r.temp}°C</td><td>${r.crop}</td>
+    </tr>`;
+  }).join("");
+}
+
+function saveToHistory() {
+  if (!freshReading || lastResult.moisture === null) {
+    histToast("⚠️ No new reading to save. Run an analysis first.");
+    return;
+  }
+  const rows = loadHistory();
+  rows.push({
+    time:     new Date().toLocaleString(),
+    moisture: lastResult.moisture,
+    status:   lastResult.status,
+    R:        sensorData.R,
+    C:        sensorData.C,
+    temp:     sensorData.Temp,
+    crop:     lastResult.crop || "—",
+  });
+  saveHistoryArr(rows);
+  freshReading = false;   // block duplicate saves until next read
+  document.getElementById("btn-save-hist").disabled = true;
+  document.getElementById("btn-save-hist").textContent = "✅ Saved!";
+  document.getElementById("history-section").style.display = "block";
+  renderHistory();
+  histToast("📌 Reading saved to history!");
+}
+
+function clearHistory() {
+  if (!confirm("Clear all saved history?")) return;
+  localStorage.removeItem(HIST_KEY);
+  renderHistory();
+  histToast("🗑 History cleared.");
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  if (loadHistory().length > 0) {
+    document.getElementById("history-section").style.display = "block";
+    renderHistory();
+  }
+});
+</script>
+
+</body>
+</html>

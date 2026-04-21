@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AgriSense — Soil Moisture Monitor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<main class="dashboard">
+
+  <!-- ═══ HEADER ═══ -->
+  <header class="dash-header">
+    <div class="header-left">
+      <span class="leaf-anim">🌿</span>
+      <div>
+        <h1>AgriSense</h1>
+        <p class="subtitle">Smart Soil Moisture Monitor</p>
+      </div>
+    </div>
+    <div id="bt-badge" class="bt-badge disconnected">
+      <span class="bt-dot"></span>
+      <span id="bt-label">No Device</span>
+    </div>
+  </header>
+
+  <!-- ═══ BLUETOOTH CONNECT ═══ -->
+  <section class="card bt-section">
+    <h2 class="section-title">📡 Arduino Bluetooth Connection</h2>
+    <p class="hint">
+      Connect your <strong>HC-05 / HC-06 / HM-10</strong> BLE module.
+      The app reads <strong>R, C, Temp</strong> automatically once paired.<br>
+      Arduino should send serial data as: <code>R:420,C:310,T:28.5</code>
+    </p>
+    <div class="bt-controls">
+      <button id="btn-connect"    class="btn btn-primary" onclick="connectBluetooth()">Connect Device</button>
+      <button id="btn-disconnect" class="btn btn-ghost"   onclick="disconnectBluetooth()" disabled>Disconnect</button>
+      <button id="btn-manual"     class="btn btn-ghost"   onclick="toggleManual()">✏️ Enter Manually</button>
+    </div>
+    <div id="bt-log" class="bt-log">Waiting for connection…</div>
+  </section>
+
+  <!-- ═══ MANUAL INPUT (hidden by default) ═══ -->
+  <section class="card" id="manual-section" style="display:none">
+    <h2 class="section-title">✏️ Manual Sensor Input</h2>
+    <div class="input-row">
+      <div class="form-group">
+        <label for="R">RSS Value</label>
+        <input type="number" id="R" placeholder="e.g. 420" step="any"/>
+      </div>
+      <div class="form-group">
+        <label for="C">CSS Value</label>
+        <input type="number" id="C" placeholder="e.g. 310" step="any"/>
+      </div>
+      <div class="form-group">
+        <label for="Temp">Temperature (°C)</label>
+        <input type="number" id="Temp" placeholder="e.g. 28" step="any"/>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ THRESHOLD SETTINGS ═══ -->
+  <section class="card">
+    <h2 class="section-title">⚙️ Moisture Thresholds</h2>
+    <div class="input-row">
+      <div class="form-group">
+        <label for="min-thresh">Min Threshold (%)</label>
+        <input type="number" id="min-thresh" value="30" min="0" max="100" step="1"/>
+        <span class="input-hint">Below this → Water the crop 💧</span>
+      </div>
+      <div class="form-group">
+        <label for="max-thresh">Max Threshold (%)</label>
+        <input type="number" id="max-thresh" value="70" min="0" max="100" step="1"/>
+        <span class="input-hint">Above this → Stop watering 🚿</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ LIVE SENSOR DISPLAY ═══ -->
+  <section class="card sensor-card" id="sensor-display" style="display:none">
+    <h2 class="section-title">📊 Live Sensor Readings</h2>
+    <div class="sensor-row">
+      <div class="sensor-chip">
+        <span class="chip-label">RSS</span>
+        <span class="chip-value" id="disp-R">—</span>
+      </div>
+      <div class="sensor-chip">
+        <span class="chip-label">CSS</span>
+        <span class="chip-value" id="disp-C">—</span>
+      </div>
+      <div class="sensor-chip">
+        <span class="chip-label">Temp</span>
+        <span class="chip-value" id="disp-T">—</span>
+        <span class="chip-unit">°C</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ PREDICT BUTTON ═══ -->
+  <div class="predict-row">
+    <button class="btn btn-predict" onclick="runPrediction()">
+      <span id="btn-predict-text">Analyse Soil →</span>
+    </button>
+  </div>
+
+  <!-- ═══ RESULT SECTION ═══ -->
+  <section class="card result-card" id="result-section" style="display:none">
+
+    <!-- Circular moisture ring -->
+    <div class="moisture-ring-wrap">
+      <svg class="moisture-ring" viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg">
+        <circle class="ring-bg"   cx="80" cy="80" r="64"/>
+        <circle class="ring-fill" cx="80" cy="80" r="64" id="ring-fill"/>
+        <text class="ring-pct"    x="80"  y="76"  text-anchor="middle" dominant-baseline="middle" id="ring-pct">0%</text>
+        <text class="ring-sub"    x="80"  y="96"  text-anchor="middle" id="ring-sub">Moisture</text>
+      </svg>
+    </div>
+
+    <!-- Status banner -->
+    <div id="status-banner" class="status-banner">
+      <span id="status-icon" class="status-icon">💧</span>
+      <div class="status-text-wrap">
+        <span id="status-title" class="status-title">Calculating…</span>
+        <span id="status-sub"   class="status-sub"></span>
+      </div>
+    </div>
+
+    <!-- Threshold bar -->
+    <div class="threshold-bar-section">
+      <div class="threshold-bar">
+        <div class="threshold-fill" id="thresh-fill"></div>
+        <div class="threshold-marker" id="min-marker"><span class="marker-tip" id="min-tip">30%</span></div>
+        <div class="threshold-marker" id="max-marker"><span class="marker-tip" id="max-tip">70%</span></div>
+      </div>
+      <div class="bar-labels">
+        <span>Dry (0%)</span>
+        <span>Wet (100%)</span>
+      </div>
+    </div>
+
+  </section>
+
+</main>
+
+<script>
+/* ── STATE ── */
+let btDevice   = null;
+let btChar     = null;
+let btBuffer   = "";
+let sensorData = { R: null, C: null, Temp: null };
+let manualMode = false;
+
+/* ── BLUETOOTH ── */
+async function connectBluetooth() {
+  if (!navigator.bluetooth) {
+    btLog("❌ Web Bluetooth not supported. Use Chrome on desktop/Android.");
+    return;
+  }
+  btLog("Requesting Bluetooth device…");
+  try {
+    btDevice = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [
+        "0000ffe0-0000-1000-8000-00805f9b34fb",
+        "6e400001-b5a4-f393-e0a9-e50e24dcca9e"
+      ]
+    });
+    btDevice.addEventListener("gattserverdisconnected", onDisconnected);
+    btLog("Found: " + (btDevice.name || "Unknown") + " — connecting…");
+
+    const server = await btDevice.gatt.connect();
+    let service, char;
+
+    // Try HM-10 / HC-08 service
+    try {
+      service = await server.getPrimaryService("0000ffe0-0000-1000-8000-00805f9b34fb");
+      char    = await service.getCharacteristic("0000ffe1-0000-1000-8000-00805f9b34fb");
+    } catch {
+      // Fall back to Nordic UART (BLE)
+      service = await server.getPrimaryService("6e400001-b5a4-f393-e0a9-e50e24dcca9e");
+      char    = await service.getCharacteristic("6e400003-b5a4-f393-e0a9-e50e24dcca9e");
+    }
+
+    btChar = char;
+    await btChar.startNotifications();
+    btChar.addEventListener("characteristicvaluechanged", onBTData);
+
+    setBTStatus(true, btDevice.name || "Connected");
+    btLog("✅ Connected to " + (btDevice.name || "device") + ". Listening for data…");
+    document.getElementById("btn-disconnect").disabled = false;
+    document.getElementById("btn-connect").disabled    = true;
+
+  } catch (err) {
+    btLog("❌ " + err.message);
+  }
+}
+
+function onBTData(event) {
+  btBuffer += new TextDecoder().decode(event.target.value);
+  const lines = btBuffer.split("\n");
+  btBuffer = lines.pop();
+  for (const line of lines) {
+    const t = line.trim();
+    if (t) { btLog("📥 " + t); parseSensorLine(t); }
+  }
+}
+
+// Parse: R:420,C:310,T:28.5  (any order, any separator)
+function parseSensorLine(line) {
+  const get = (pat) => { const m = line.match(new RegExp(pat + "[:\\s]+([\\d.\\-]+)", "i")); return m ? parseFloat(m[1]) : null; };
+  const R = get("R"), C = get("C"), T = get("T(?:emp)?");
+  if (R !== null) sensorData.R    = R;
+  if (C !== null) sensorData.C    = C;
+  if (T !== null) sensorData.Temp = T;
+  showSensorDisplay();
+}
+
+function onDisconnected() {
+  setBTStatus(false, "No Device");
+  btLog("⚠️ Device disconnected.");
+  document.getElementById("btn-disconnect").disabled = true;
+  document.getElementById("btn-connect").disabled    = false;
+}
+
+function disconnectBluetooth() {
+  if (btDevice && btDevice.gatt.connected) btDevice.gatt.disconnect();
+}
+
+/* ── MANUAL MODE ── */
+function toggleManual() {
+  manualMode = !manualMode;
+  document.getElementById("manual-section").style.display = manualMode ? "block" : "none";
+  document.getElementById("btn-manual").textContent = manualMode ? "✕ Close Manual" : "✏️ Enter Manually";
+}
+
+/* ── PREDICTION ── */
+async function runPrediction() {
+  let R, C, Temp;
+  if (manualMode) {
+    R    = parseFloat(document.getElementById("R").value);
+    C    = parseFloat(document.getElementById("C").value);
+    Temp = parseFloat(document.getElementById("Temp").value);
+  } else {
+    ({ R, C, Temp } = sensorData);
+  }
+
+  if (R === null || C === null || Temp === null || isNaN(R) || isNaN(C) || isNaN(Temp)) {
+    btLog("⚠️ No sensor data. Connect Bluetooth or use Manual mode first.");
+    return;
+  }
+
+  const minT = parseFloat(document.getElementById("min-thresh").value);
+  const maxT = parseFloat(document.getElementById("max-thresh").value);
+  document.getElementById("btn-predict-text").textContent = "Analysing…";
+
+  try {
+    const res  = await fetch("/predict", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ R, C, Temp, min_threshold: minT, max_threshold: maxT })
+    });
+    const data = await res.json();
+    if (data.error) { btLog("❌ " + data.error); return; }
+    showResult(data.moisture, data.status, minT, maxT);
+    btLog("✅ Moisture: " + data.moisture + "% — " + data.status);
+  } catch (e) {
+    btLog("❌ " + e.message);
+  } finally {
+    document.getElementById("btn-predict-text").textContent = "Analyse Soil →";
+  }
+}
+
+/* ── SHOW RESULT ── */
+function showResult(moisture, status, minT, maxT) {
+  const sec = document.getElementById("result-section");
+  sec.style.display = "block";
+  sec.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  // Ring animation
+  const r = 64, circ = 2 * Math.PI * r;
+  const pct = Math.min(Math.max(moisture, 0), 100);
+  const ring = document.getElementById("ring-fill");
+  ring.style.strokeDasharray  = circ;
+  ring.style.strokeDashoffset = circ * (1 - pct / 100);
+  ring.setAttribute("class", "ring-fill ring-" + status);
+  document.getElementById("ring-pct").textContent = pct + "%";
+
+  // Banner
+  const banner = document.getElementById("status-banner");
+  banner.setAttribute("class", "status-banner status-" + status);
+
+  const configs = {
+    water: { icon: "💧", title: "Water the Crop!", sub: `Moisture (${pct}%) is below the minimum threshold of ${minT}%` },
+    stop:  { icon: "🚿", title: "Watering Stopped",sub: `Moisture (${pct}%) exceeds the maximum threshold of ${maxT}%` },
+    ok:    { icon: "✅", title: "Soil is Healthy", sub: `Moisture (${pct}%) is within the range ${minT}% – ${maxT}%` }
+  };
+  const cfg = configs[status] || configs.ok;
+  document.getElementById("status-icon").textContent  = cfg.icon;
+  document.getElementById("status-title").textContent = cfg.title;
+  document.getElementById("status-sub").textContent   = cfg.sub;
+
+  // Threshold bar
+  document.getElementById("thresh-fill").style.width  = pct + "%";
+  document.getElementById("thresh-fill").setAttribute("class", "threshold-fill fill-" + status);
+  document.getElementById("min-marker").style.left    = minT + "%";
+  document.getElementById("max-marker").style.left    = maxT + "%";
+  document.getElementById("min-tip").textContent      = "Min " + minT + "%";
+  document.getElementById("max-tip").textContent      = "Max " + maxT + "%";
+}
+
+/* ── SENSOR DISPLAY ── */
+function showSensorDisplay() {
+  document.getElementById("sensor-display").style.display = "block";
+  if (sensorData.R    !== null) document.getElementById("disp-R").textContent = sensorData.R;
+  if (sensorData.C    !== null) document.getElementById("disp-C").textContent = sensorData.C;
+  if (sensorData.Temp !== null) document.getElementById("disp-T").textContent = sensorData.Temp;
+}
+
+/* ── HELPERS ── */
+function setBTStatus(on, label) {
+  document.getElementById("bt-badge").className = "bt-badge " + (on ? "connected" : "disconnected");
+  document.getElementById("bt-label").textContent = label;
+}
+function btLog(msg) {
+  document.getElementById("bt-log").textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
+}
+</script>
+</body>
+</html>
