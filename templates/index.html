@@ -3,10 +3,49 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>AgriSense — Soil Moisture Monitor</title>
+  <title>AgriSense IIT BHU — Soil Moisture Monitor</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <style>
+    /* ── IIT BHU HEADER BRANDING ── */
+    .iitbhu-brand {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      padding: 10px 24px 12px;
+      background: rgba(26,58,42,0.55);
+      backdrop-filter: blur(10px);
+      border-radius: var(--radius);
+      border: 1px solid rgba(201,168,76,0.3);
+      animation: rise 0.4s ease both;
+      margin-bottom: 0;
+    }
+    .iitbhu-logo {
+      width: 54px;
+      height: 54px;
+      border-radius: 6px;
+      background: #fff;
+      padding: 3px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      flex-shrink: 0;
+    }
+    .iitbhu-text { text-align: left; }
+    .iitbhu-text .main-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.55rem;
+      color: var(--cream);
+      letter-spacing: -0.01em;
+      line-height: 1.1;
+    }
+    .iitbhu-text .sub-title {
+      font-size: 0.72rem;
+      color: var(--gold);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
     /* ── STEP FLOW ── */
     .steps { display:flex; align-items:center; justify-content:center; gap:0; margin-bottom:4px; }
     .step  { display:flex; flex-direction:column; align-items:center; gap:4px; flex:1; }
@@ -115,32 +154,72 @@
     }
     .hist-toast.show { transform:translateY(0); opacity:1; }
 
-    .btn-record {
-        padding: 7px 14px;
-        font-size: 0.78rem;
-        margin-left: 10px;
+    /* ── RECORDING FREQUENCY ── */
+    .record-controls { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:16px; }
+    .freq-label { font-size:0.78rem; color:var(--green-mid); font-weight:500; white-space:nowrap; }
+    .freq-select {
+      padding:7px 12px; border-radius:9px; font-size:0.82rem;
+      border:1.5px solid rgba(45,106,79,0.25); background:rgba(255,255,255,0.8);
+      color:var(--green-deep); font-family:'DM Sans',sans-serif; outline:none;
+      transition:border-color .2s;
     }
-    #history-chart-container {
-        margin-top: 20px;
+    .freq-select:focus { border-color:var(--green-light); }
+    .btn-record { padding:8px 16px; font-size:0.78rem; }
+    .record-status {
+      font-size:0.78rem; color:#888; font-style:italic;
+      padding:6px 12px; background:rgba(45,106,79,0.08); border-radius:8px;
+      display:none; width:100%;
     }
+    .record-status.active { display:block; color:var(--green-mid); font-style:normal; }
+
+    #history-chart-container { margin-top: 20px; }
+
+    /* ── DEVICE ID CHIP ── */
+    .device-chip {
+      display:flex; align-items:center; gap:8px;
+      font-size:0.72rem; color:rgba(255,255,255,0.55);
+      background:rgba(255,255,255,0.08); border-radius:99px;
+      padding:5px 12px; border:1px solid rgba(255,255,255,0.12);
+    }
+    .device-dot { width:6px; height:6px; border-radius:50%; background:var(--gold); }
   </style>
 </head>
 <body>
 
 <main class="dashboard">
 
-  <!-- HEADER -->
+  <!-- IIT BHU BRANDING HEADER -->
+  <div class="iitbhu-brand">
+    <img
+      class="iitbhu-logo"
+      src="https://upload.wikimedia.org/wikipedia/en/thumb/b/b1/IIT-BHU_Logo.svg/240px-IIT-BHU_Logo.svg.png"
+      alt="IIT BHU Logo"
+      onerror="this.style.display='none'"
+    />
+    <div class="iitbhu-text">
+      <div class="main-title">AgriSense — IIT BHU</div>
+      <div class="sub-title">Smart Soil Moisture Monitor · Varanasi</div>
+    </div>
+  </div>
+
+  <!-- HEADER with BT status + device ID -->
   <header class="dash-header">
     <div class="header-left">
       <span class="leaf-anim">🌿</span>
       <div>
         <h1>AgriSense</h1>
-        <p class="subtitle">Smart Soil Moisture Monitor</p>
+        <p class="subtitle">Soil Moisture Dashboard</p>
       </div>
     </div>
-    <div id="bt-badge" class="bt-badge disconnected">
-      <span class="bt-dot"></span>
-      <span id="bt-label">No Device</span>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:7px;">
+      <div id="bt-badge" class="bt-badge disconnected">
+        <span class="bt-dot"></span>
+        <span id="bt-label">No Device</span>
+      </div>
+      <div class="device-chip">
+        <span class="device-dot"></span>
+        <span id="device-id-display">—</span>
+      </div>
     </div>
   </header>
 
@@ -177,7 +256,7 @@
   <!-- STEP 2 — ONE-SHOT READ -->
   <section class="card" id="section-read" style="display:none">
     <h2 class="section-title">📥 Step 2 — Read Sensor Data</h2>
-    <p class="hint">Click <strong>Read from Arduino</strong> once. Captures one reading and stops.</p>
+    <p class="hint">Click <strong>Read from Arduino</strong> to capture a fresh reading from the device.</p>
     <button id="btn-read-now" class="btn btn-primary" onclick="readOnce()">Read from Arduino</button>
     <div id="sensor-captured-note">✅ Sensor data captured! Scroll down to set thresholds.</div>
     <div class="sensor-row" id="sensor-display" style="display:none; margin-top:16px;">
@@ -286,24 +365,53 @@
     </div>
 
     <div style="text-align:center; margin-top:20px;">
-      <button class="btn btn-ghost" onclick="resetForNewRead()">🔄 Read Again</button>
+      <button class="btn btn-ghost" onclick="resetForNewRead()">🔄 Read Again (Fresh from Arduino)</button>
     </div>
     <button class="btn-save-hist" id="btn-save-hist" onclick="saveToHistory()" disabled>📌 Save to History</button>
 
   </section>
 
+
   <!-- HISTORY PANEL -->
   <section class="card" id="history-section">
     <div class="history-header">
       <h2 class="section-title">🕒 Reading History</h2>
-      <div>
-        <button id="btn-start-record" class="btn btn-primary btn-record" onclick="startRecording()">Start Recording</button>
-        <button id="btn-stop-record" class="btn btn-ghost btn-record" onclick="stopRecording()" disabled>Stop Recording</button>
-        <button class="btn btn-ghost" style="font-size:0.78rem;padding:7px 14px; margin-left:10px;" onclick="clearHistory()">🗑 Clear</button>
-      </div>
+      <button class="btn btn-ghost" style="font-size:0.78rem;padding:7px 14px;" onclick="clearHistory()">🗑 Clear</button>
     </div>
-    <p class="history-meta">Readings for this user · <span id="hist-count">0</span> entries</p>
-    <div class="hist-table-wrap">
+    <p class="history-meta">
+      This device · <span id="hist-count">0</span> entries
+      <br><span style="font-size:0.7rem;color:#aaa;word-break:break-all;">Device ID: <span id="hist-device-id">—</span></span>
+    </p>
+
+    <!-- RECORDING CONTROLS -->
+    <div style="background:rgba(45,106,79,0.06);border-radius:12px;padding:14px 16px;border:1px solid rgba(45,106,79,0.12);">
+      <div style="font-size:0.82rem;font-weight:600;color:var(--green-mid);margin-bottom:10px;">🔴 Auto-Record from Arduino</div>
+      <div class="record-controls">
+        <span class="freq-label">Frequency:</span>
+        <select id="freq-select" class="freq-select">
+          <option value="2000">Every 2 seconds</option>
+          <option value="5000" selected>Every 5 seconds</option>
+          <option value="10000">Every 10 seconds</option>
+          <option value="15000">Every 15 seconds</option>
+          <option value="30000">Every 30 seconds</option>
+          <option value="60000">Every 1 minute</option>
+          <option value="300000">Every 5 minutes</option>
+        </select>
+        <span class="freq-label" style="margin-left:4px;">Count:</span>
+        <select id="count-select" class="freq-select">
+          <option value="5">5 readings</option>
+          <option value="10" selected>10 readings</option>
+          <option value="20">20 readings</option>
+          <option value="50">50 readings</option>
+          <option value="0">Unlimited</option>
+        </select>
+        <button id="btn-start-record" class="btn btn-primary btn-record" onclick="startRecording()">▶ Start</button>
+        <button id="btn-stop-record"  class="btn btn-ghost btn-record"   onclick="stopRecording()" disabled>⏹ Stop</button>
+      </div>
+      <div class="record-status" id="record-status"></div>
+    </div>
+
+    <div style="margin-top:16px;" class="hist-table-wrap">
       <table class="hist-table">
         <thead>
           <tr>
@@ -328,8 +436,6 @@
 
 </main>
 
-<div class="hist-toast" id="hist-toast"></div>
-
 <script>
 /* ══ STATE ══ */
 let btDevice   = null;
@@ -339,6 +445,30 @@ let sensorData = { R: null, C: null, Temp: null };
 let manualMode = false;
 let dataReady  = false;
 let debugOn    = false;
+
+/* ══ DEVICE ID — unique per browser/device, stored in localStorage ══ */
+function getOrCreateDeviceId() {
+  const KEY = "agrisense_device_id";
+  let id = localStorage.getItem(KEY);
+  if (!id) {
+    id = "dev_" + Date.now().toString(36) + "_" + Math.random().toString(36).substr(2, 8);
+    localStorage.setItem(KEY, id);
+  }
+  return id;
+}
+const DEVICE_ID = getOrCreateDeviceId();
+const HIST_KEY  = "agrisense_history_" + DEVICE_ID;
+
+// Show device ID in UI
+document.addEventListener("DOMContentLoaded", () => {
+  const short = DEVICE_ID.slice(-8);
+  document.getElementById("device-id-display").textContent  = "ID: …" + short;
+  document.getElementById("hist-device-id").textContent     = DEVICE_ID;
+  if (loadHistory().length > 0) {
+    document.getElementById("history-section").style.display = "block";
+    renderHistory();
+  }
+});
 
 /* ══ DEBUG LOG ══ */
 function dlog(msg) {
@@ -364,49 +494,33 @@ function markStepActive(n) { document.getElementById("step"+n).className = "step
 async function connectBluetooth() {
   if (!navigator.bluetooth) {
     btLog("❌ Web Bluetooth not supported. Use Chrome on desktop or Android.");
-    dlog("navigator.bluetooth is undefined");
     return;
   }
   btLog("Requesting Bluetooth device…");
-  dlog("Calling requestDevice()");
   try {
     btDevice = await navigator.bluetooth.requestDevice({
       acceptAllDevices: true,
       optionalServices: [
-        "0000ffe0-0000-1000-8000-00805f9b34fb",   // HM-10 / HC-08
-        // FIX: UUID was "b5a4" in requestDevice but "b5a3" in getPrimaryService — unified to b5a4
-        "6e400001-b5a4-f393-e0a9-e50e24dcca9e"    // Nordic UART
+        "0000ffe0-0000-1000-8000-00805f9b34fb",
+        "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
       ]
     });
-    dlog("Device selected: " + (btDevice.name || "unnamed"));
     btDevice.addEventListener("gattserverdisconnected", onDisconnected);
     btLog("Found: " + (btDevice.name || "Unknown") + " — connecting GATT…");
 
     const server = await btDevice.gatt.connect();
-    dlog("GATT connected");
-
     let service, char;
     try {
       service = await server.getPrimaryService("0000ffe0-0000-1000-8000-00805f9b34fb");
       char    = await service.getCharacteristic("0000ffe1-0000-1000-8000-00805f9b34fb");
-      dlog("Using HM-10 service (FFE0/FFE1)");
     } catch(e1) {
-      dlog("HM-10 failed (" + e1.message + "), trying Nordic UART…");
-      try {
-        // FIX: was "b5a3" — corrected to "b5a4" to match requestDevice declaration above
-        service = await server.getPrimaryService("6e400001-b5a4-f393-e0a9-e50e24dcca9e");
-        char    = await service.getCharacteristic("6e400003-b5a4-f393-e0a9-e50e24dcca9e");
-        dlog("Using Nordic UART service");
-      } catch(e2) {
-        dlog("Nordic UART also failed: " + e2.message);
-        btLog("❌ Could not find a compatible BLE serial service on this device.");
-        return;
-      }
+      service = await server.getPrimaryService("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
+      char    = await service.getCharacteristic("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
     }
 
     btChar = char;
     setBTStatus(true, btDevice.name || "Connected");
-    btLog("✅ Connected! Click 'Read from Arduino' to capture one reading.");
+    btLog("✅ Connected! Click 'Read from Arduino' to capture a fresh reading.");
     document.getElementById("btn-disconnect").disabled = false;
     document.getElementById("btn-connect").disabled    = true;
     markStepDone(1);
@@ -414,89 +528,72 @@ async function connectBluetooth() {
     document.getElementById("section-read").style.display = "block";
 
   } catch (err) {
-    dlog("connectBluetooth error: " + err.message);
     btLog("❌ " + err.message);
   }
 }
 
-/* ══ ONE-SHOT READ ══ */
+/* ══ ONE-SHOT READ — always reads fresh data from Arduino ══ */
 function readOnce() {
   if (!btChar) { btLog("❌ Not connected to any device."); return; }
 
-  btLog("⏳ Waiting for one reading from Arduino…");
-  dlog("readOnce() called, starting notifications");
+  // Reset previous sensor data to ensure fresh read
+  sensorData = { R: null, C: null, Temp: null };
+  dataReady  = false;
+
+  btLog("⏳ Requesting fresh reading from Arduino…");
   document.getElementById("btn-read-now").disabled    = true;
   document.getElementById("btn-read-now").textContent = "Waiting for data…";
+  document.getElementById("sensor-display").style.display = "none";
+  document.getElementById("sensor-captured-note").style.display = "none";
   btBuffer = "";
 
   function oneShot(event) {
     const chunk = new TextDecoder().decode(event.target.value);
     btBuffer += chunk;
-    dlog("BT chunk: " + JSON.stringify(chunk) + "  buffer: " + JSON.stringify(btBuffer));
-
-    // FIX: was "\\n" (literal backslash-n) — must be "\n" to split on actual newline characters
     const lines = btBuffer.split("\n");
-    btBuffer = lines.pop();   // keep incomplete last fragment
+    btBuffer = lines.pop();
 
     for (const line of lines) {
-      // FIX: was "replace(/\\r/g, '')" — must be /\r/g to strip carriage returns
       const t = line.trim().replace(/\r/g, "");
       if (!t) continue;
-      dlog("Trying to parse line: " + JSON.stringify(t));
 
-      // ── Format: "420,310,28.50"  (CSV — primary Arduino format)
-      // FIX: regex was "[\d.]+" using escaped brackets — corrected to proper character class
-      const csvMatch = t.match(/^[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.\-]+$/);
-      if (csvMatch) {
+      const csv = t.match(/^[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.\-]+$/);
+      if (csv) {
         btChar.removeEventListener("characteristicvaluechanged", oneShot);
         btChar.stopNotifications().catch(() => {});
-        const parts = t.split(',');
+        const parts = csv[0].split(',');
         sensorData.R    = parseFloat(parts[0]);
         sensorData.C    = parseFloat(parts[1]);
         sensorData.Temp = parseFloat(parts[2]);
-        dlog("CSV parsed → R=" + sensorData.R + " C=" + sensorData.C + " T=" + sensorData.Temp);
-        btLog("📥 Captured: Resistive=" + sensorData.R + "  Capacitive=" + sensorData.C + "  Temp=" + sensorData.Temp + "°C");
+        btLog("📥 Fresh read: R=" + sensorData.R + "  C=" + sensorData.C + "  T=" + sensorData.Temp + "°C");
         onReadCaptured();
         return;
       }
 
-      // ── Format: "R:420,C:310,T:28.5"  (labelled fallback)
-      // FIX: was using double-escaped regex chars like "[\\\d.\\\-]+" — corrected
-      const gv = (p) => {
-        const m = t.match(new RegExp(p + "[:\\s]+([\\d.\\-]+)", "i"));
-        return m ? parseFloat(m[1]) : null;
-      };
+      const gv = (p) => { const m = t.match(new RegExp(p+"[:\\s]+([\\d.\\-]+)","i")); return m ? parseFloat(m[1]) : null; };
       const R = gv("R"), C = gv("C"), T = gv("T(?:emp)?");
       if (R !== null && C !== null && T !== null) {
         btChar.removeEventListener("characteristicvaluechanged", oneShot);
         btChar.stopNotifications().catch(() => {});
         sensorData.R = R; sensorData.C = C; sensorData.Temp = T;
-        dlog("Labelled parsed → R=" + R + " C=" + C + " T=" + T);
-        btLog("📥 Captured: R=" + R + "  C=" + C + "  Temp=" + T + "°C");
+        btLog("📥 Fresh read (labelled): R=" + R + "  C=" + C + "  T=" + T + "°C");
         onReadCaptured();
         return;
       }
-
-      dlog("Line did not match any pattern, waiting for next line…");
-      btLog("⏳ Received raw data, waiting for complete line…");
+      btLog("⏳ Waiting for complete line…");
     }
   }
 
   btChar.addEventListener("characteristicvaluechanged", oneShot);
-  btChar.startNotifications().catch(err => {
-    dlog("startNotifications error: " + err.message);
-    btLog("❌ " + err.message);
-    // FIX: re-enable the button if startNotifications fails so user can retry
-    document.getElementById("btn-read-now").disabled    = false;
-    document.getElementById("btn-read-now").textContent = "Read from Arduino";
-  });
+  btChar.startNotifications().catch(err => btLog("❌ " + err.message));
 }
 
 function onReadCaptured() {
   dataReady = true;
   document.getElementById("sensor-display").style.display   = "flex";
   document.getElementById("sensor-captured-note").style.display = "block";
-  document.getElementById("btn-read-now").textContent = "✅ Reading Captured";
+  document.getElementById("btn-read-now").disabled    = false;
+  document.getElementById("btn-read-now").textContent = "🔄 Read Again (Fresh)";
   document.getElementById("disp-R").textContent = sensorData.R;
   document.getElementById("disp-C").textContent = sensorData.C;
   document.getElementById("disp-T").textContent = sensorData.Temp;
@@ -527,7 +624,6 @@ function confirmManual() {
   sensorData = { R, C, Temp }; dataReady = true;
   note.textContent   = "✅ Values confirmed!";
   note.style.display = "block";
-  dlog("Manual → R=" + R + " C=" + C + " Temp=" + Temp);
 
   manualMode = false;
   document.getElementById("manual-section").style.display = "none";
@@ -544,7 +640,6 @@ function confirmManual() {
 function onDisconnected() {
   setBTStatus(false, "No Device");
   btLog("⚠️ Device disconnected.");
-  dlog("gattserverdisconnected event fired");
   document.getElementById("btn-disconnect").disabled = true;
   document.getElementById("btn-connect").disabled    = false;
 }
@@ -564,13 +659,6 @@ async function runPrediction() {
   const maxT = parseFloat(document.getElementById("max-thresh").value);
   const crop = document.getElementById("crop-name").value.trim() || "Unknown Crop";
 
-  // FIX: validate threshold values
-  if (isNaN(minT) || isNaN(maxT) || minT >= maxT) {
-    btLog("⚠️ Invalid thresholds. Min must be less than Max.");
-    return Promise.reject("Invalid thresholds");
-  }
-
-  dlog("Sending to /predict → R=" + R + " C=" + C + " Temp=" + Temp + " min=" + minT + " max=" + maxT);
   document.getElementById("btn-predict-text").textContent = "Analysing…";
 
   try {
@@ -579,21 +667,15 @@ async function runPrediction() {
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ R, C, Temp, min_threshold: minT, max_threshold: maxT })
     });
-    dlog("HTTP status: " + res.status);
     const data = await res.json();
-    dlog("Response: " + JSON.stringify(data));
-    if (data.error) {
-      btLog("❌ Server: " + data.error);
-      return Promise.reject(data.error);
-    }
+    if (data.error) { btLog("❌ Server: " + data.error); return Promise.reject(data.error); }
     markStepDone(3); markStepDone(4);
     showResult(data.moisture, data.status, minT, maxT, crop);
     btLog("✅ " + crop + " — Moisture: " + data.moisture + "% → " + data.status);
-    return Promise.resolve({ moisture: data.moisture, status: data.status, crop });
+    return Promise.resolve(data);
   } catch (e) {
-    dlog("fetch error: " + e.message || e);
-    btLog("❌ " + (e.message || e));
-    return Promise.reject(e);
+    btLog("❌ " + e.message);
+    return Promise.reject(e.message);
   } finally {
     document.getElementById("btn-predict-text").textContent = "Analyse Soil →";
   }
@@ -622,7 +704,7 @@ function showResult(moisture, status, minT, maxT, crop) {
     water: { icon:"💧", title:"Water the Crop!",  sub:`${crop} moisture (${pct}%) is below the minimum of ${minT}%` },
     stop:  { icon:"🚿", title:"Watering Stopped", sub:`${crop} moisture (${pct}%) exceeds the maximum of ${maxT}%` },
     ok:    { icon:"✅", title:"Soil is Healthy",  sub:`${crop} moisture (${pct}%) is within ${minT}% – ${maxT}%` }
-  }[status] || { icon:"❓", title:"Unknown Status", sub:"" };
+  }[status];
   document.getElementById("status-icon").textContent  = cfg.icon;
   document.getElementById("status-title").textContent = cfg.title;
   document.getElementById("status-sub").textContent   = cfg.sub;
@@ -635,20 +717,24 @@ function showResult(moisture, status, minT, maxT, crop) {
   document.getElementById("max-tip").textContent   = "Max " + maxT + "%";
 }
 
-/* ══ RESET ══ */
+/* ══ RESET — clears sensor data, forces fresh Arduino read ══ */
 function resetForNewRead() {
   sensorData = { R:null, C:null, Temp:null }; dataReady = false;
   [1,2,3,4].forEach(n => document.getElementById("step"+n).className = "step");
   [1,2,3].forEach(n  => document.getElementById("line"+n).className  = "step-line");
   markStepActive(1);
-  ["section-read","section-settings","section-analyse","result-section","sensor-display","sensor-captured-note"]
+  ["section-settings","section-analyse","result-section","sensor-display","sensor-captured-note"]
     .forEach(id => document.getElementById(id).style.display = "none");
-  const rb = document.getElementById("btn-read-now");
-  rb.disabled = false; rb.textContent = "Read from Arduino";
-  btLog("🔄 Ready. Click 'Read from Arduino'.");
+
   if (btDevice && btDevice.gatt.connected) {
     markStepDone(1); markStepActive(2);
     document.getElementById("section-read").style.display = "block";
+    const rb = document.getElementById("btn-read-now");
+    rb.disabled = false; rb.textContent = "Read from Arduino";
+    btLog("🔄 Ready for a fresh read. Click 'Read from Arduino'.");
+  } else {
+    document.getElementById("section-read").style.display = "none";
+    btLog("🔄 Ready. Connect device and click 'Read from Arduino'.");
   }
   document.querySelector(".dashboard").scrollIntoView({ behavior:"smooth" });
 }
@@ -661,20 +747,12 @@ function setBTStatus(on, label) {
 function btLog(msg) {
   document.getElementById("bt-log").textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
 }
+</script>
 
-/* ══ HISTORY & CHART ══ */
-function getOrCreateUserId() {
-  let userId = document.cookie.replace(/(?:(?:^|.*;\s*)userId\s*=\s*([^;]*).*$)|^.*$/, "$1");
-  if (!userId) {
-    userId = "user_" + Date.now() + "_" + Math.random().toString(36).substr(2, 9);
-    document.cookie = "userId=" + userId + "; expires=Fri, 31 Dec 9999 23:59:59 GMT; path=/";
-  }
-  return userId;
-}
-
-const USER_ID = getOrCreateUserId();
-const HIST_KEY = "agrisense_history_" + USER_ID;
-let lastResult = { moisture: null, status: null, crop: null };
+<div class="hist-toast" id="hist-toast"></div>
+<script>
+/* ══ HISTORY — per-device localStorage ══ */
+let lastResult   = { moisture: null, status: null, crop: null };
 let freshReading = false;
 let historyChart = null;
 
@@ -684,24 +762,17 @@ function histToast(msg) {
   t.classList.add("show");
   setTimeout(() => t.classList.remove("show"), 3000);
 }
-function loadHistory()    { try { return JSON.parse(localStorage.getItem(HIST_KEY)) || []; } catch(e) { return []; } }
-function saveHistoryArr(a){ localStorage.setItem(HIST_KEY, JSON.stringify(a)); }
+function loadHistory()     { try { return JSON.parse(localStorage.getItem(HIST_KEY)) || []; } catch(e) { return []; } }
+function saveHistoryArr(a) { localStorage.setItem(HIST_KEY, JSON.stringify(a)); }
 
 function renderHistoryChart(history) {
-  const chartContainer = document.getElementById("history-chart-container");
-  const canvas = document.getElementById("history-chart");
-
+  const container = document.getElementById("history-chart-container");
+  const ctx = document.getElementById("history-chart").getContext("2d");
   if (history.length === 0) {
-    // FIX: destroy chart before hiding container to prevent canvas reuse error
-    if (historyChart) {
-      historyChart.destroy();
-      historyChart = null;
-    }
-    chartContainer.style.display = "none";
-    return;
+    if (historyChart) { historyChart.destroy(); historyChart = null; }
+    container.style.display = "none"; return;
   }
-  chartContainer.style.display = "block";
-
+  container.style.display = "block";
   const labels = history.map(r => new Date(r.time).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit", second:"2-digit" }));
   const data   = history.map(r => r.moisture);
 
@@ -710,22 +781,11 @@ function renderHistoryChart(history) {
     historyChart.data.datasets[0].data = data;
     historyChart.update();
   } else {
-    // FIX: destroy any orphaned chart instance on the canvas before creating new one
-    const existing = Chart.getChart(canvas);
-    if (existing) existing.destroy();
-
-    historyChart = new Chart(canvas.getContext("2d"), {
+    historyChart = new Chart(ctx, {
       type: "line",
       data: {
         labels,
-        datasets: [{
-          label: "Moisture %",
-          data,
-          borderColor: "rgba(82,183,136,1)",
-          backgroundColor: "rgba(82,183,136,0.2)",
-          fill: true,
-          tension: 0.3
-        }]
+        datasets: [{ label:"Moisture %", data, borderColor:"rgba(82,183,136,1)", backgroundColor:"rgba(82,183,136,0.2)", fill:true, tension:0.3 }]
       },
       options: {
         responsive: true,
@@ -765,10 +825,7 @@ function saveToHistory(isFromRecording = false) {
     histToast("⚠️ No new reading to save. Run an analysis first.");
     return;
   }
-  if (lastResult.moisture === null) {
-    histToast("⚠️ No analysis result to save.");
-    return;
-  }
+  if (lastResult.moisture === null) { histToast("⚠️ No analysis result to save."); return; }
 
   const rows = loadHistory();
   rows.push({
@@ -784,9 +841,9 @@ function saveToHistory(isFromRecording = false) {
 
   if (!isFromRecording) {
     freshReading = false;
-    document.getElementById("btn-save-hist").disabled    = true;
-    document.getElementById("btn-save-hist").textContent = "✅ Saved!";
-    histToast("📌 Reading saved to history!");
+    document.getElementById("btn-save-hist").disabled     = true;
+    document.getElementById("btn-save-hist").textContent  = "✅ Saved!";
+    histToast("📌 Reading saved to this device's history!");
   }
 
   document.getElementById("history-section").style.display = "block";
@@ -794,58 +851,125 @@ function saveToHistory(isFromRecording = false) {
 }
 
 function clearHistory() {
-  if (!confirm("Clear all saved history for this user?")) return;
-  // FIX: destroy chart before clearing so Chart.js doesn't crash on canvas reuse
-  if (historyChart) {
-    historyChart.destroy();
-    historyChart = null;
-  }
+  if (!confirm("Clear all saved history for this device?")) return;
   localStorage.removeItem(HIST_KEY);
   renderHistory();
-  histToast("🗑 History cleared.");
+  histToast("🗑 History cleared for this device.");
 }
 
-/* ══ RECORDING ══ */
+/* ══ AUTO-RECORDING — reads fresh from Arduino each time ══ */
 let recordingInterval = null;
 let recordingCount    = 0;
-const MAX_RECORDS     = 5;
+let recordingTotal    = 0;
 
-function startRecording() {
-  if (lastResult.moisture === null) {
-    histToast("⚠️ No analysis to record. Run an analysis first.");
-    return;
-  }
-  document.getElementById("btn-start-record").disabled = true;
-  document.getElementById("btn-stop-record").disabled  = false;
-  histToast("🔴 Recording analysis every 2s for 10s.");
-  recordingCount = 0;
+async function doRecordCycle() {
+  const minT = parseFloat(document.getElementById("min-thresh").value);
+  const maxT = parseFloat(document.getElementById("max-thresh").value);
+  const crop = document.getElementById("crop-name").value.trim() || "Unknown Crop";
 
-  recordingInterval = setInterval(() => {
-    // FIX: snapshot current lastResult at time of save, not a stale reference
+  updateRecordStatus(`Reading ${recordingCount + 1}${recordingTotal > 0 ? " / " + recordingTotal : ""}… requesting fresh Arduino data`);
+
+  try {
+    // Step 1: get a fresh reading from Arduino
+    await new Promise((resolve, reject) => {
+      if (!btChar) { reject("No BLE connection"); return; }
+      sensorData = { R: null, C: null, Temp: null };
+      dataReady  = false;
+      let buf = "";
+      const timeout = setTimeout(() => {
+        btChar.removeEventListener("characteristicvaluechanged", handler);
+        btChar.stopNotifications().catch(() => {});
+        reject("Timeout waiting for Arduino data");
+      }, 8000);
+
+      function handler(event) {
+        buf += new TextDecoder().decode(event.target.value);
+        const lines = buf.split("\n");
+        buf = lines.pop();
+        for (const line of lines) {
+          const t = line.trim().replace(/\r/g, "");
+          if (!t) continue;
+          const csv = t.match(/^[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.\-]+$/);
+          if (csv) {
+            clearTimeout(timeout);
+            btChar.removeEventListener("characteristicvaluechanged", handler);
+            btChar.stopNotifications().catch(() => {});
+            const p = csv[0].split(",");
+            sensorData.R = parseFloat(p[0]);
+            sensorData.C = parseFloat(p[1]);
+            sensorData.Temp = parseFloat(p[2]);
+            dataReady = true;
+            resolve();
+            return;
+          }
+        }
+      }
+
+      btChar.addEventListener("characteristicvaluechanged", handler);
+      btChar.startNotifications().catch(err => { clearTimeout(timeout); reject(err.message); });
+    });
+
+    // Step 2: run prediction with fresh data
+    const res  = await fetch("/predict", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ R: sensorData.R, C: sensorData.C, Temp: sensorData.Temp, min_threshold: minT, max_threshold: maxT })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    lastResult = { moisture: data.moisture, status: data.status, crop };
+    showResult(data.moisture, data.status, minT, maxT, crop);
     saveToHistory(true);
     recordingCount++;
-    if (recordingCount >= MAX_RECORDS) {
-      stopRecording();
-    }
-  }, 2000);
+
+    const remaining = recordingTotal > 0 ? recordingTotal - recordingCount : "∞";
+    updateRecordStatus(`✅ Saved reading ${recordingCount}. Next in ${parseInt(document.getElementById("freq-select").value)/1000}s · Remaining: ${remaining}`);
+
+    if (recordingTotal > 0 && recordingCount >= recordingTotal) stopRecording();
+
+  } catch (err) {
+    updateRecordStatus("⚠️ Cycle error: " + err + " — will retry next interval");
+    histToast("⚠️ " + err);
+  }
+}
+
+function startRecording() {
+  if (!btChar && !dataReady) {
+    histToast("⚠️ Connect Arduino or enter data manually first.");
+    return;
+  }
+  const freq  = parseInt(document.getElementById("freq-select").value);
+  const count = parseInt(document.getElementById("count-select").value);
+  recordingTotal = count;
+  recordingCount = 0;
+
+  document.getElementById("btn-start-record").disabled = true;
+  document.getElementById("btn-stop-record").disabled  = false;
+
+  const freqLabel = document.getElementById("freq-select").selectedOptions[0].text;
+  const cntLabel  = count === 0 ? "unlimited" : count + " readings";
+  histToast(`🔴 Recording: ${freqLabel}, ${cntLabel}`);
+  updateRecordStatus(`🔴 Recording started — ${freqLabel}, ${cntLabel}`);
+
+  // Run immediately, then on interval
+  doRecordCycle();
+  recordingInterval = setInterval(doRecordCycle, freq);
 }
 
 function stopRecording() {
-  if (recordingInterval) {
-    clearInterval(recordingInterval);
-    recordingInterval = null;
-  }
+  if (recordingInterval) { clearInterval(recordingInterval); recordingInterval = null; }
   document.getElementById("btn-start-record").disabled = false;
   document.getElementById("btn-stop-record").disabled  = true;
-  histToast("⏹️ Recording finished.");
+  updateRecordStatus("");
+  histToast(`⏹️ Recording stopped after ${recordingCount} reading(s).`);
 }
 
-window.addEventListener("DOMContentLoaded", () => {
-  if (loadHistory().length > 0) {
-    document.getElementById("history-section").style.display = "block";
-    renderHistory();
-  }
-});
+function updateRecordStatus(msg) {
+  const el = document.getElementById("record-status");
+  el.textContent = msg;
+  el.className   = "record-status" + (msg ? " active" : "");
+}
 </script>
 
 </body>
