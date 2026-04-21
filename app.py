@@ -157,17 +157,5 @@ def predict():
 # RUN
 # ============================================================
 if __name__ == "__main__":
-    CERT = os.path.join(BASE_DIR, "cert.pem")
-    KEY  = os.path.join(BASE_DIR, "key.pem")
-
-    if os.path.exists(CERT) and os.path.exists(KEY):
-        print("[BOOT] 🔒 SSL certificates found — running on HTTPS")
-        print("[BOOT] 👉 Open: https://127.0.0.1:5001")
-        print("[BOOT]    If Chrome shows 'Not Private': Advanced → Proceed")
-        print("[BOOT]    OR type  thisisunsafe  on that page")
-        app.run(debug=True, host="0.0.0.0", port=5001,
-                ssl_context=(CERT, KEY))
-    else:
-        print("[BOOT] ⚠️  No SSL certs — running plain HTTP (localhost only)")
-        print("[BOOT] 👉 Open: http://127.0.0.1:5001")
-        app.run(debug=True, host="127.0.0.1", port=5001)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
